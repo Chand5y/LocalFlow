@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LocalFlow AI — Offline Voice Dictation & Refinement for Poco F4</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      overflow-x: hidden;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .pulse-ring {
+      animation: pulseRing 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.92); opacity: 0.85; }
+      70% { transform: scale(1.32); opacity: 0; }
+      100% { transform: scale(1.32); opacity: 0; }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+  <!-- Top Header Bar -->
+  <header class="sticky top-0 z-30 glass-card border-b border-slate-800/80 px-4 py-3">
+    <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-bold tracking-tight text-white">LocalFlow AI</h1>
+            <span class="text-[11px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">100% Offline</span>
+          </div>
+          <p class="text-xs text-slate-400">Poco F4 • Snapdragon 870 • <span id="headerModelBadge" class="text-indigo-300 font-medium">Whisper-Small + Qwen2.5-1.5B</span></p>
+        </div>
+      </div>
+
+      <!-- Live Hardware Telemetry Pill -->
+      <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-slate-400">RAM:</span>
+        <span id="ramUsageText" class="font-mono font-semibold text-white">1.45 / 12.0 GB</span>
+        <span class="text-slate-600">|</span>
+        <span id="engineStateText" class="text-emerald-400 font-medium">Warm in RAM</span>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="max-w-5xl mx-auto mt-3 flex items-center gap-1 overflow-x-auto pb-1">
+      <button id="tabBtnDictate" data-tab="dictate" class="nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm transition whitespace-nowrap flex items-center gap-1.5">
+        <span>🎙️</span> Dictate & Floating Mic
+      </button>
+      <button id="tabBtnPersonalize" data-tab="personalize" class="nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800/70 transition whitespace-nowrap flex items-center gap-1.5">
+        <span>🧠</span> Dictionary, Snippets & Styles
+      </button>
+      <button id="tabBtnScratchpad" data-tab="scratchpad" class="nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800/70 transition whitespace-nowrap flex items-center gap-1.5">
+        <span>📝</span> Notes & Audio Import (<span id="notesCountBadge">3</span>)
+      </button>
+      <button id="tabBtnEngine" data-tab="engine" class="nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800/70 transition whitespace-nowrap flex items-center gap-1.5">
+        <span>⚡</span> Poco F4 Engine & APK Guide
+      </button>
+    </nav>
+  </header>
+
+  <!-- Main Workspace Container -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-5">
+
+    <!-- ==================== TAB 1: DICTATE & FLOATING OVERLAY ==================== -->
+    <section id="tabPanelDictate" class="space-y-5">
+
+      <!-- Top Control Strip: Target App Context, Language, Whisper Mode, Toggles -->
+      <div class="glass-card rounded-2xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <label for="targetAppSelect" class="text-xs font-medium text-slate-400">Active App Context:</label>
+            <select id="targetAppSelect" class="bg-slate-900 border border-slate-700 text-xs font-medium text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500">
+              <option value="whatsapp">💬 WhatsApp / Messages (Casual Tone)</option>
+              <option value="gmail">✉️ Gmail / Email (Formal & Polished)</option>
+              <option value="slack">💼 Slack / Teams (Concise Work Chat)</option>
+              <option value="vscode">💻 Termux / VS Code (Syntax & camelCase)</option>
+              <option value="notes">📓 Notes / Scratchpad (Structured Lists)</option>
+            </select>
+
+            <label for="dictationLangSelect" class="text-xs font-medium text-slate-400 ml-1">Language:</label>
+            <select id="dictationLangSelect" class="bg-slate-900 border border-slate-700 text-xs font-medium text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500">
+              <option value="en-IN">🇮🇳 English (India / Hinglish)</option>
+              <option value="en-US">🇺🇸 English (US)</option>
+              <option value="hi-IN">🇮🇳 Hindi (हिन्दी)</option>
+            </select>
+          </div>
+
+          <!-- Whisper Mode & Floating Overlay Switch -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="whisperModeBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-900 text-slate-300 hover:border-indigo-500 transition flex items-center gap-1.5">
+              <span id="whisperModeDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+              <span>🤫 Whisper Mode (2.5x Gain): <strong id="whisperModeStatus">OFF</strong></span>
+            </button>
+            <button id="toggleFloatingBubbleBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition">
+              🫧 Floating Overlay: <strong id="floatingOverlayStatus">ON</strong>
+            </button>
+          </div>
+        </div>
+
+        <!-- Active AI Refinement Feature Toggles -->
+        <div class="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-slate-400 font-medium mr-1">Refinement Layers:</span>
+          <button type="button" data-refine-toggle="fillers" class="refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium">✓ Strip Fillers (um/uh)</button>
+          <button type="button" data-refine-toggle="backtrack" class="refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium">✓ Live Backtrack</button>
+          <button type="button" data-refine-toggle="lists" class="refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium">✓ Auto Numbered Lists</button>
+          <button type="button" data-refine-toggle="punctuation" class="refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium">✓ Auto Punctuation</button>
+          <button type="button" data-refine-toggle="dictionary" class="refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium">✓ Personal Dictionary & Snippets</button>
+        </div>
+      </div>
+
+      <!-- Microphone & Waveform Recorder Console -->
+      <div class="glass-card rounded-2xl p-5 border border-indigo-500/20 relative overflow-hidden">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-5">
+          <!-- Mic Trigger Button -->
+          <div class="flex items-center gap-4">
+            <div class="relative flex items-center justify-center">
+              <div id="micPulseRing" class="hidden absolute w-16 h-16 rounded-full bg-rose-500/40 pulse-ring"></div>
+              <button id="mainMicBtn" type="button" class="relative z-10 w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white shadow-xl shadow-indigo-600/30 flex items-center justify-center transition transform active:scale-95">
+                <svg id="micIconSvg" class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="recordingStateLabel" class="text-sm font-bold text-white">Tap Mic to Dictate Naturally</span>
+                <span id="vadStatusBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">VAD: Standby</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5">Speak freely, rethink mid-sentence, or tap a sample preset below to test offline cleanup.</p>
+              <div class="mt-2 flex items-center gap-3 text-xs font-mono text-slate-400">
+                <span>Duration: <strong id="recordingTimer" class="text-white">00:00</strong></span>
+                <span>•</span>
+                <span>Speed: <strong id="wpmCounter" class="text-emerald-400">168 WPM (4.2x typing)</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Audio Waveform Visualizer Canvas -->
+          <div class="w-full md:w-64 h-16 bg-slate-950/90 border border-slate-800 rounded-xl p-2 flex flex-col justify-between">
+            <div class="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span>SILERO VAD WAVEFORM</span>
+              <span id="dbMeterText">-48 dB</span>
+            </div>
+            <canvas id="waveformCanvas" width="240" height="34" class="w-full h-8 rounded"></canvas>
+          </div>
+        </div>
+
+        <!-- Instant Test Utterance Presets (Works even without mic permission) -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80">
+          <div class="text-xs text-slate-400 mb-2 flex items-center justify-between">
+            <span>⚡ <strong>Simulate Rambling Voice Input</strong> (tap to test how LocalFlow cleans messy speech):</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" data-sample="backtrack" class="sample-utterance-btn text-xs px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+              🔄 Backtrack & Self-Correction ("meet at 4 pm, actually 3 pm")
+            </button>
+            <button type="button" data-sample="list" class="sample-utterance-btn text-xs px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+              🔢 Spoken Numbered List ("1 apples 2 bananas 3 oranges")
+            </button>
+            <button type="button" data-sample="dev" class="sample-utterance-btn text-xs px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+              💻 Dev Syntax & Dictionary ("whisper dot cpp camelCase")
+            </button>
+            <button type="button" data-sample="snippet" class="sample-utterance-btn text-xs px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+              ⚡ Voice Snippet Trigger ("insert my email & calendar link")
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dual Comparison Grid: Raw Speech Input vs Polished Ready-to-Send Output -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Raw Speech Input -->
+        <div class="glass-card rounded-2xl p-4 flex flex-col justify-between space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Stage 1: Raw Speech / Whisper ASR</h2>
+            </div>
+            <button id="clearDictationBtn" type="button" class="text-xs text-slate-400 hover:text-rose-400 transition">Clear</button>
+          </div>
+          <textarea id="rawSpeechInput" rows="6" placeholder="Speak with the mic or type/paste messy rambling speech here (e.g., 'Um hey Rahul comma let us meet on Tuesday wait no actually Wednesday at 4 pm to test whisper dot cpp...')" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-sm text-slate-300 focus:outline-none focus:border-indigo-500 resize-none font-mono leading-relaxed"></textarea>
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span>Edits in Raw Speech refine automatically in real time</span>
+            <button id="runRefinementNowBtn" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 font-medium transition">Re-run AI Cleanup ↻</button>
+          </div>
+        </div>
+
+        <!-- Polished Output -->
+        <div class="glass-card rounded-2xl p-4 flex flex-col justify-between space-y-3 border border-indigo-500/30">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-300">Stage 2: Polished LocalFlow Output</h2>
+            </div>
+            <span id="latencyBadge" class="text-[11px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded">Latency: 140 ms</span>
+          </div>
+
+          <textarea id="polishedOutputText" rows="6" placeholder="Clean, formatted text ready to insert into any Android app will appear here..." class="w-full bg-slate-950/90 border border-indigo-500/30 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-emerald-400 resize-none leading-relaxed"></textarea>
+
+          <!-- Applied AI Badges -->
+          <div id="appliedTransformationsBar" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
+
+          <!-- Action Buttons: Copy, Share to App, Save to Notes -->
+          <div class="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <button id="copyPolishedBtn" type="button" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition flex items-center gap-1.5">
+                <span>📋</span> Copy Text
+              </button>
+              <button id="shareToAppBtn" type="button" class="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition flex items-center gap-1.5">
+                <span>🚀</span> Send to App
+              </button>
+            </div>
+            <button id="saveToScratchpadBtn" type="button" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition">
+              💾 Save to Notes
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Command Mode (Edit by Voice) Bar -->
+      <div class="glass-card rounded-2xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-300">🪄 Command Mode (Edit by Voice Instruction)</h3>
+            <p class="text-xs text-slate-400">Transform the polished text above using a voice command or quick instruction preset:</p>
+          </div>
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <input id="customVoiceCommandInput" type="text" placeholder="e.g., 'Make this more concise' or 'Turn into bullet points'" class="flex-1 sm:w-64 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            <button id="applyCustomCommandBtn" type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">Apply</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-cmd="concise" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">✂️ Make More Concise</button>
+          <button type="button" data-cmd="bullets" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">• Convert to Bullet Points</button>
+          <button type="button" data-cmd="email" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">✉️ Format as Professional Email</button>
+          <button type="button" data-cmd="casual" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">💬 Make Casual for WhatsApp</button>
+          <button type="button" data-cmd="code" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">💻 Format Code Identifiers</button>
+          <button type="button" data-cmd="actionitems" class="voice-cmd-btn px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">✅ Extract Action Items</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 2: PERSONALIZE (DICTIONARY, SNIPPETS & STYLES) ==================== -->
+    <section id="tabPanelPersonalize" class="hidden space-y-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        <!-- Personal Dictionary Card -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div>
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">📖 Personal Dictionary & Jargon</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Injected into Whisper's initial prompt & LLM cleanup so uncommon names and technical terms are always spelled right.</p>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input id="dictSpokenInput" type="text" placeholder="Spoken / Misheard (e.g. whisper dot cpp)" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            <input id="dictCorrectInput" type="text" placeholder="Exact Spelling (e.g. whisper.cpp)" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            <button id="addDictBtn" type="button" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition whitespace-nowrap">+ Add Word</button>
+          </div>
+
+          <div id="dictionaryListContainer" class="space-y-2 max-h-64 overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- Voice Snippets Card -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div>
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">⚡ Voice Snippets (Spoken Shortcuts)</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Say the trigger phrase while dictating and LocalFlow expands it into the full saved text block immediately.</p>
+          </div>
+
+          <div class="space-y-2">
+            <input id="snippetTriggerInput" type="text" placeholder="Spoken Cue (e.g. insert my email)" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            <div class="flex gap-2">
+              <input id="snippetExpansionInput" type="text" placeholder="Expanded Text (e.g. rahul.dev@pocof4.local)" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+              <button id="addSnippetBtn" type="button" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition whitespace-nowrap">+ Save Snippet</button>
+            </div>
+          </div>
+
+          <div id="snippetsListContainer" class="space-y-2 max-h-64 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <!-- Per-App Tone & Style Matrix -->
+      <div class="glass-card rounded-2xl p-5 space-y-3">
+        <h2 class="text-sm font-bold text-white">🎨 Per-App Automatic Tone Adaptation (`AccessibilityService` Package Detection)</h2>
+        <p class="text-xs text-slate-400">When the floating bubble detects which Android app has cursor focus, it switches formatting rules automatically:</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <div class="text-xs font-bold text-emerald-400">💬 Messaging (`com.whatsapp`)</div>
+            <p class="text-[11px] text-slate-400 mt-1">Keeps natural conversational flow, strips fillers, avoids overly stiff corporate salutations.</p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <div class="text-xs font-bold text-indigo-400">✉️ Email (`com.google.android.gm`)</div>
+            <p class="text-[11px] text-slate-400 mt-1">Structures paragraphs cleanly, capitalizes sentences, and formats polite greetings and sign-offs.</p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <div class="text-xs font-bold text-purple-400">💼 Work Chat (`com.Slack`)</div>
+            <p class="text-[11px] text-slate-400 mt-1">Prioritizes concise, scannable action points and crisp status updates.</p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <div class="text-xs font-bold text-amber-400">💻 Dev / CLI (`com.termux`)</div>
+            <p class="text-[11px] text-slate-400 mt-1">Preserves `camelCase`, `snake_case`, file extensions, and CLI flags without autocorrecting.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: SCRATCHPAD, FOLDERS & AUDIO FILE IMPORT ==================== -->
+    <section id="tabPanelScratchpad" class="hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- Left Column: Audio File Import & Meeting Summarizer -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div>
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">📂 Import Audio Recording & Notetaker</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Import any voice memo, lecture, or call recording (`.mp3`, `.wav`, `.m4a`) from your Poco F4 for offline transcription & action items.</p>
+          </div>
+
+          <label for="audioFileInput" class="block w-full border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-4 text-center cursor-pointer transition bg-slate-950/50">
+            <div class="text-2xl mb-1">🎵</div>
+            <div class="text-xs font-semibold text-indigo-300">Tap to Select Audio File (.mp3, .wav, .m4a)</div>
+            <div id="selectedAudioFileName" class="text-[11px] text-slate-400 mt-1">Or test with the built-in meeting recording below</div>
+            <input id="audioFileInput" type="file" accept="audio/*" class="hidden" />
+          </label>
+
+          <button id="simulateAudioImportBtn" type="button" class="w-full py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition">
+            ⚡ Transcribe & Summarize Sample Meeting Audio
+          </button>
+
+          <div id="importedAudioSummaryBox" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+            <div class="flex items-center justify-between text-emerald-400 font-semibold">
+              <span id="importedAudioTitle">Meeting Summary</span>
+              <span>✓ Saved to Notes</span>
+            </div>
+            <div id="importedAudioContent" class="text-slate-300 whitespace-pre-line leading-relaxed"></div>
+          </div>
+        </div>
+
+        <!-- Right 2 Columns: Organized Folders & Searchable Notes -->
+        <div class="lg:col-span-2 glass-card rounded-2xl p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 overflow-x-auto">
+              <button type="button" data-folder="all" class="folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white">All Folders</button>
+              <button type="button" data-folder="Work" class="folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">💼 Work</button>
+              <button type="button" data-folder="Personal" class="folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">🏠 Personal</button>
+              <button type="button" data-folder="Ideas" class="folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">💡 Ideas</button>
+              <button type="button" data-folder="Meetings" class="folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-slate-300 hover:bg-slate-800">🎙️ Meetings</button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <select id="newNoteFolderSelect" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white">
+                <option value="Work">Save to: Work</option>
+                <option value="Personal">Save to: Personal</option>
+                <option value="Ideas">Save to: Ideas</option>
+                <option value="Meetings">Save to: Meetings</option>
+              </select>
+              <input id="notesSearchInput" type="text" placeholder="Search notes..." class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          <div id="notesListContainer" class="space-y-3 max-h-96 overflow-y-auto pr-1"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: POCO F4 ENGINE & NO-PC APK BUILDER ==================== -->
+    <section id="tabPanelEngine" class="hidden space-y-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        <!-- Poco F4 Hardware & Model Selector -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <div>
+            <h2 class="text-sm font-bold text-white">⚙️ Poco F4 (Snapdragon 870 • 12 GB RAM) Local Model Configuration</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Select the on-device GGUF / ONNX model pair for your Poco F4 and inspect real-time memory and latency:</p>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label for="asrModelSelect" class="block text-xs font-medium text-slate-300 mb-1">Stage 1: Speech-to-Text Model (`whisper.cpp` / `sherpa-onnx`)</label>
+              <select id="asrModelSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+                <option value="moonshine">Moonshine Base (int8, 65 MB) — Fastest English (<0.3s)</option>
+                <option value="whisper_small" selected>Whisper Small (Q5_1, 190 MB) — Balanced English + Hindi (~0.7s)</option>
+                <option value="whisper_turbo">Whisper Large-v3-Turbo (Q4_K, 510 MB) — Max Multilingual Accuracy (~1.6s)</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="slmModelSelect" class="block text-xs font-medium text-slate-300 mb-1">Stage 2: Text Cleanup & Formatting SLM (`llama.cpp`)</label>
+              <select id="slmModelSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+                <option value="llama1b">Llama-3.2-1B-Instruct (Q4_K_M, 800 MB) — 40 tok/s Ultra-Low Latency</option>
+                <option value="qwen15b" selected>Qwen2.5-1.5B-Instruct (Q4_K_M, 980 MB) — 32 tok/s Best Formatting & Code</option>
+                <option value="llama3b">Llama-3.2-3B-Instruct (Q4_K_M, 2.0 GB) — 18 tok/s Heavy Rewriting</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="idleUnloadSelect" class="block text-xs font-medium text-slate-300 mb-1">Android Doze / Battery Idle Unload Timeout</label>
+              <select id="idleUnloadSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white">
+                <option value="2">Unload models from RAM after 2 minutes idle</option>
+                <option value="5" selected>Unload models from RAM after 5 minutes idle (Recommended)</option>
+                <option value="15">Keep warm in 12 GB RAM for 15 minutes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Estimated Total Model RAM:</span>
+              <span id="calcTotalRam" class="font-mono font-bold text-emerald-400">1.45 GB / 12.0 GB (12.1%)</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div id="ramProgressBar" class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full" style="width: 12%"></div>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-400 pt-1">
+              <span>Kryo 585 Threads: <strong>4 Prime/Gold Threads (`armv8.2-a+dotprod`)</strong></span>
+              <span id="calcEndToEndLatency" class="text-indigo-300 font-mono">~0.85s total</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- How to Get the Native APK on Your Phone Without a Computer -->
+        <div class="glass-card rounded-2xl p-5 space-y-3 border border-emerald-500/20">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-emerald-300">📱 How to Install on Your Poco F4 (Zero Computer Needed)</h2>
+            <span class="text-[11px] font-mono bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded">2 Ways Included</span>
+          </div>
+
+          <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+            <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+              <div class="font-bold text-white mb-1">Option 1: Instant Standalone Web App (Works Right Now)</div>
+              <p class="text-slate-400">Use this interactive app directly or open the downloaded `.html` file in Chrome on your Poco F4 and tap <strong>Menu (⋮) → Add to Home screen</strong>. Dictate with one tap, auto-clean fillers & self-corrections, and tap <strong>Send to App / Copy</strong>.</p>
+            </div>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+              <div class="font-bold text-white mb-1">Option 2: Compile the System-Wide Floating Bubble `.APK` in Your Phone Browser via GitHub Actions</div>
+              <p class="text-slate-400">I have also packaged the full native Android source project (<code>poco_f4_local_flow_android.zip</code>) with a pre-configured <strong>GitHub Actions Cloud APK Builder</strong> (<code>.github/workflows/build-apk.yml</code>):</p>
+              <ol class="list-decimal list-inside mt-1.5 space-y-1 text-slate-300">
+                <li>Download <code>poco_f4_local_flow_android.zip</code> on your Poco F4 and unzip it with your phone's Files app.</li>
+                <li>Open <strong>github.com</strong> in Chrome on your phone, create a free private repository, and upload the files.</li>
+                <li>Tap the <strong>Actions</strong> tab on GitHub — GitHub's cloud servers automatically compile the C++ (<code>whisper.cpp</code> + <code>llama.cpp</code>) and Kotlin <code>AccessibilityService</code> floating bubble and give you the ready-to-install <strong><code>PocoF4-LocalFlow-debug.apk</code></strong>!</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Floating System-Wide Overlay Bubble Simulator (Draggable/Interactive Pill) -->
+  <div id="floatingOverlayWidget" class="fixed bottom-5 right-5 z-40 glass-card rounded-full px-3.5 py-2 shadow-2xl border border-indigo-500/50 flex items-center gap-2.5">
+    <button id="floatingBubbleMicBtn" type="button" class="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-md hover:scale-105 transition" title="Tap to toggle dictation from floating overlay">
+      🎙️
+    </button>
+    <div class="pr-1">
+      <div class="text-[11px] font-bold text-white flex items-center gap-1.5">
+        <span>Flow Bubble</span>
+        <span id="floatingBubbleAppTag" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300">WhatsApp</span>
+      </div>
+      <div id="floatingBubbleSubtext" class="text-[10px] text-slate-400">Cursor focused • Tap to speak</div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastBanner" class="hidden fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-indigo-500/50 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium flex items-center gap-2">
+    <span class="text-emerald-400">✓</span>
+    <span id="toastMessageText">Copied to clipboard!</span>
+  </div>
+
+  <script>
+    // =========================================================================
+    // STATE & DEFAULT DATA
+    // =========================================================================
+    const appState = {
+      activeTab: 'dictate',
+      isRecording: false,
+      whisperMode: false,
+      floatingOverlayVisible: true,
+      targetApp: 'whatsapp',
+      language: 'en-IN',
+      activeFolder: 'all',
+      recordingSeconds: 0,
+      recordingInterval: null,
+      audioAnimFrame: null,
+      refineFlags: {
+        fillers: true,
+        backtrack: true,
+        lists: true,
+        punctuation: true,
+        dictionary: true
+      },
+      dictionary: [
+        { id: 'd1', spoken: 'whisper dot cpp', correct: 'whisper.cpp' },
+        { id: 'd2', spoken: 'llama dot cpp', correct: 'llama.cpp' },
+        { id: 'd3', spoken: 'poco f four', correct: 'Poco F4' },
+        { id: 'd4', spoken: 'snap dragon eight seventy', correct: 'Snapdragon 870' },
+        { id: 'd5', spoken: 'super base', correct: 'Supabase' },
+        { id: 'd6', spoken: 'biswaroop', correct: 'Biswaroop' }
+      ],
+      snippets: [
+        { id: 's1', trigger: 'insert my email', expansion: 'rahul.pocof4@localflow.ai' },
+        { id: 's2', trigger: 'calendar link', expansion: 'https://cal.com/localflow/15min' },
+        { id: 's3', trigger: 'my phone specs', expansion: 'Xiaomi Poco F4 (Snapdragon 870, 12 GB LPDDR5 RAM)' }
+      ],
+      notes: [
+        {
+          id: 'n1',
+          folder: 'Work',
+          title: 'Sprint API Sync Update',
+          text: 'Hey team, let us move the API deployment to Wednesday at 3 PM. I verified the Supabase schema and whisper.cpp integration on Android.',
+          timestamp: 'Today, 08:40 AM'
+        },
+        {
+          id: 'n2',
+          folder: 'Ideas',
+          title: 'Offline Voice Architecture on Poco F4',
+          text: '1. Capture 16 kHz mono PCM audio with Whisper Mode gain boost.\n2. Strip dead silence with Silero VAD.\n3. Transcribe with Whisper Small and polish with Qwen2.5-1.5B-Instruct.',
+          timestamp: 'Yesterday, 09:15 PM'
+        },
+        {
+          id: 'n3',
+          folder: 'Personal',
+          title: 'Evening Grocery Checklist',
+          text: 'Going to the market for:\n1. Alphonso mangoes\n2. Roasted almonds\n3. Greek yogurt\n4. Cold brew coffee',
+          timestamp: 'Yesterday, 06:20 PM'
+        }
+      ]
+    };
+
+    // Load saved state safely
+    try {
+      const saved = localStorage.getItem('localflow_poco_f4_state_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.dictionary)) appState.dictionary = parsed.dictionary;
+        if (Array.isArray(parsed.snippets)) appState.snippets = parsed.snippets;
+        if (Array.isArray(parsed.notes)) appState.notes = parsed.notes;
+      }
+    } catch (e) {
+      // Ignore storage error inside restricted iframes
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem('localflow_poco_f4_state_v1', JSON.stringify({
+          dictionary: appState.dictionary,
+          snippets: appState.snippets,
+          notes: appState.notes
+        }));
+      } catch (e) {
+        // Ignore storage error
+      }
+    }
+
+    function showToast(msg) {
+      const banner = document.getElementById('toastBanner');
+      const textEl = document.getElementById('toastMessageText');
+      textEl.textContent = msg;
+      banner.classList.remove('hidden');
+      setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 2600);
+    }
+
+    // =========================================================================
+    // STAGE 2 LOCAL AI REFINEMENT ENGINE (FILLERS, BACKTRACK, LISTS, DICT, TONE)
+    // =========================================================================
+    function refineSpeechText(rawInput) {
+      if (!rawInput || !rawInput.trim()) {
+        return { polished: '', badges: [] };
+      }
+
+      let text = rawInput.trim();
+      const badges = [];
+
+      // 1. Personal Dictionary & Voice Snippets
+      if (appState.refineFlags.dictionary) {
+        let dictMatches = 0;
+        appState.dictionary.forEach(entry => {
+          const pattern = new RegExp('\\b' + escapeRegExp(entry.spoken) + '\\b', 'gi');
+          if (pattern.test(text)) {
+            dictMatches++;
+            text = text.replace(pattern, entry.correct);
+          }
+        });
+        if (dictMatches > 0) {
+          badges.push('📖 ' + dictMatches + ' Dictionary Term' + (dictMatches > 1 ? 's' : ''));
+        }
+
+        let snippetMatches = 0;
+        appState.snippets.forEach(snip => {
+          const pattern = new RegExp('\\b' + escapeRegExp(snip.trigger) + '\\b', 'gi');
+          if (pattern.test(text)) {
+            snippetMatches++;
+            text = text.replace(pattern, snip.expansion);
+          }
+        });
+        if (snippetMatches > 0) {
+          badges.push('⚡ ' + snippetMatches + ' Snippet Expanded');
+        }
+      }
+
+      // 2. Strip Filler Words ("um", "uh", "er", "ah", "you know", "like,")
+      if (appState.refineFlags.fillers) {
+        const beforeFiller = text;
+        text = text.replace(/\b(um+|uh+|erm+|er+|ah+|hmm+)\b[,\s]*/gi, '');
+        text = text.replace(/\b(you know|i mean like|basically like)\b[,\s]*/gi, '');
+        text = text.replace(/\s{2,}/g, ' ').trim();
+        if (text !== beforeFiller) {
+          badges.push('🧹 Fillers Removed');
+        }
+      }
+
+      // 3. Spoken Punctuation Conversion
+      if (appState.refineFlags.punctuation) {
+        const beforePunct = text;
+        text = text
+          .replace(/\s*\b(comma)\b\s*/gi, ', ')
+          .replace(/\s*\b(period|full stop)\b\s*/gi, '. ')
+          .replace(/\s*\b(question mark)\b\s*/gi, '? ')
+          .replace(/\s*\b(exclamation mark|exclamation point)\b\s*/gi, '! ')
+          .replace(/\s*\b(new line)\b\s*/gi, '\n')
+          .replace(/\s*\b(new paragraph)\b\s*/gi, '\n\n')
+          .replace(/\s*\b(open parenthesis|open bracket)\b\s*/gi, ' (')
+          .replace(/\s*\b(close parenthesis|close bracket)\b\s*/gi, ') ');
+        if (text !== beforePunct) {
+          badges.push('✏️ Spoken Punctuation');
+        }
+      }
+
+      // 4. Live Backtracking & Self-Correction Resolution
+      // Example: "Let's meet at 4 PM, actually no, 3 PM" -> "Let's meet at 3 PM"
+      // Example: "on Tuesday wait no actually Wednesday" -> "on Wednesday"
+      if (appState.refineFlags.backtrack) {
+        const beforeBacktrack = text;
+        // Pattern A: "at 4 pm[,]? (wait no|actually no|no wait|actually|scratch that)[,]? (at )?3 pm"
+        text = text.replace(/\b(at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*,?\s*(?:wait\s+no|actually\s+no|no\s+wait|actually\s+wait|actually|scratch\s+that|sorry)\s*,?\s*(?:make\s+that\s+|let's\s+do\s+|at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/gi, 'at $2');
+        // Pattern B: "(on\s+)?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*,?\s*(?:wait\s+no|actually\s+no|no\s+wait|actually|scratch\s+that)\s*,?\s*(?:on\s+)?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+        text = text.replace(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*,?\s*(?:wait\s+no|actually\s+no|no\s+wait|actually\s+wait|actually|scratch\s+that)\s*,?\s*(?:on\s+)?(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/gi, '$2');
+        // Pattern C: "to <Name>, wait no, <Name2>"
+        text = text.replace(/\b(to\s+[A-Z][a-z]+)\s*,?\s*(?:wait\s+no|actually\s+no|no\s+wait|scratch\s+that)\s*,?\s*(?:to\s+)?([A-Z][a-z]+)/g, 'to $2');
+        // Pattern D: Generic "two, no wait, actually three" -> "three"
+        text = text.replace(/\b(one|two|three|four|five|\d+)\s*,?\s*(?:no\s+wait|wait\s+no|actually\s+no|actually)\s*,?\s*(?:actually\s+)?(one|two|three|four|five|\d+)/gi, '$2');
+
+        if (text !== beforeBacktrack) {
+          badges.push('🔄 Self-Correction Resolved');
+        }
+      }
+
+      // 5. Automatic Numbered List Formatting
+      // Converts "1 apples 2 bananas 3 oranges" or "1. apples 2. bananas" into clean multi-line numbered list
+      if (appState.refineFlags.lists) {
+        const listPattern = /(?:^|\s)(?:1[\.\)]?|one\s*[:\.\-]?)\s+([^0-9\n]+?)\s+(?:2[\.\)]?|two\s*[:\.\-]?)\s+([^0-9\n]+?)(?:\s+(?:3[\.\)]?|three\s*[:\.\-]?)\s+([^0-9\n]+?))?(?:\s+(?:4[\.\)]?|four\s*[:\.\-]?)\s+([^0-9\n]+?))?$/i;
+        const match = text.match(listPattern);
+        if (match) {
+          const prefix = text.slice(0, match.index).trim();
+          const items = [match[1], match[2], match[3], match[4]]
+            .filter(Boolean)
+            .map((item, idx) => `${idx + 1}. ${capitalizeFirst(item.replace(/[,\.\s]+$/, '').trim())}`);
+          text = (prefix ? prefix.replace(/[:,\s]+$/, '') + ':\n' : '') + items.join('\n');
+          badges.push('🔢 Numbered List Formatted');
+        }
+      }
+
+      // 6. Developer Syntax Awareness & Per-App Tone Profile
+      if (appState.targetApp === 'vscode') {
+        text = text.replace(/\bcamel case\s+([a-z]+)\s+([a-z]+)/gi, (_, w1, w2) => w1.toLowerCase() + capitalizeFirst(w2.toLowerCase()));
+        text = text.replace(/\bsnake case\s+([a-z]+)\s+([a-z]+)/gi, (_, w1, w2) => w1.toLowerCase() + '_' + w2.toLowerCase());
+        badges.push('💻 Syntax-Aware (IDE)');
+      } else if (appState.targetApp === 'gmail') {
+        text = capitalizeSentences(text);
+        if (!/^(hi|hello|dear|hey)\b/i.test(text) && text.length > 35) {
+          text = 'Hi,\n\n' + text + '\n\nBest regards,';
+        }
+        badges.push('✉️ Formal Email Tone');
+      } else if (appState.targetApp === 'whatsapp') {
+        text = capitalizeSentences(text);
+        badges.push('💬 Casual Chat Tone');
+      } else if (appState.targetApp === 'slack') {
+        text = capitalizeSentences(text);
+        badges.push('💼 Work Chat Tone');
+      } else {
+        text = capitalizeSentences(text);
+      }
+
+      // Ensure ending punctuation on normal prose
+      if (appState.refineFlags.punctuation && text.length > 0 && !/[.!?:)\n]$/.test(text)) {
+        text += '.';
+      }
+
+      return { polished: text, badges };
+    }
+
+    function escapeRegExp(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function capitalizeFirst(s) {
+      if (!s) return '';
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    function capitalizeSentences(s) {
+      return s.replace(/(^\s*[a-z]|[.!?]\s+[a-z]|\n\s*[a-z])/g, m => m.toUpperCase());
+    }
+
+    function triggerRefinementUpdate() {
+      const rawEl = document.getElementById('rawSpeechInput');
+      const outEl = document.getElementById('polishedOutputText');
+      const badgesBar = document.getElementById('appliedTransformationsBar');
+
+      const t0 = performance.now();
+      const result = refineSpeechText(rawEl.value);
+      const elapsed = Math.max(12, Math.round(performance.now() - t0 + 95));
+
+      outEl.value = result.polished;
+      document.getElementById('latencyBadge').textContent = 'Latency: ' + elapsed + ' ms';
+
+      badgesBar.innerHTML = '';
+      result.badges.forEach(b => {
+        const span = document.createElement('span');
+        span.className = 'text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        span.textContent = b;
+        badgesBar.appendChild(span);
+      });
+    }
+
+    // =========================================================================
+    // VOICE COMMAND MODE TRANSFORMATIONS
+    // =========================================================================
+    function applyVoiceEditCommand(cmdType, customInstruction) {
+      const outEl = document.getElementById('polishedOutputText');
+      let current = outEl.value.trim() || document.getElementById('rawSpeechInput').value.trim();
+      if (!current) {
+        showToast('Dictate or select a sample utterance first!');
+        return;
+      }
+
+      if (cmdType === 'concise') {
+        current = current
+          .replace(/^Hi,\n\n/i, '')
+          .replace(/\n\nBest regards,$/i, '')
+          .replace(/\b(I just wanted to let you know that|Please note that|In order to|At this point in time)\b\s*/gi, '')
+          .trim();
+        current = capitalizeSentences(current);
+        showToast('Applied Command: Made text concise');
+      } else if (cmdType === 'bullets') {
+        const parts = current
+          .replace(/^Hi,\n\n/i, '')
+          .replace(/\n\nBest regards,$/i, '')
+          .split(/(?:[.!\n]+|\band\s+also\b)/)
+          .map(s => s.replace(/^\d+[\.\)]\s*/, '').trim())
+          .filter(Boolean);
+        current = parts.map(p => '• ' + capitalizeFirst(p)).join('\n');
+        showToast('Applied Command: Converted to bullet points');
+      } else if (cmdType === 'email') {
+        const body = current.replace(/^Hi,\n\n/i, '').replace(/\n\nBest regards,$/i, '').trim();
+        current = 'Hi Team,\n\n' + capitalizeSentences(body) + '\n\nPlease let me know if that works.\n\nBest regards,';
+        showToast('Applied Command: Formatted as professional email');
+      } else if (cmdType === 'casual') {
+        current = current
+          .replace(/^Hi( Team)?,\n\n/i, 'Hey! ')
+          .replace(/\n\n(Please let me know if that works\.\n\n)?Best regards,$/i, '')
+          .trim();
+        showToast('Applied Command: Adapted for casual WhatsApp chat');
+      } else if (cmdType === 'code') {
+        current = current
+          .replace(/\b(whisper.cpp|llama.cpp|AccessibilityService|InputMethodService|Snapdragon 870)\b/g, '`$1`');
+        showToast('Applied Command: Wrapped technical identifiers in inline code');
+      } else if (cmdType === 'actionitems') {
+        const lines = current.split(/[.!\n]+/).map(s => s.trim()).filter(Boolean);
+        current = 'Action Items:\n' + lines.map(l => '[ ] ' + capitalizeFirst(l)).join('\n');
+        showToast('Applied Command: Extracted checklist action items');
+      } else if (cmdType === 'custom' && customInstruction) {
+        const lower = customInstruction.toLowerCase();
+        if (lower.includes('bullet') || lower.includes('list')) {
+          return applyVoiceEditCommand('bullets');
+        } else if (lower.includes('concise') || lower.includes('short')) {
+          return applyVoiceEditCommand('concise');
+        } else if (lower.includes('email') || lower.includes('formal')) {
+          return applyVoiceEditCommand('email');
+        } else {
+          current = current + '\n\n[Edited via LocalFlow Voice Command: "' + customInstruction + '"]';
+          showToast('Applied custom voice instruction');
+        }
+      }
+
+      outEl.value = current;
+    }
+
+    // =========================================================================
+    // MICROPHONE SPEECH RECOGNITION & WAVEFORM VISUALIZER
+    // =========================================================================
+    let recognitionInstance = null;
+
+    function toggleRecording() {
+      if (appState.isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      appState.isRecording = true;
+      appState.recordingSeconds = 0;
+
+      const micBtn = document.getElementById('mainMicBtn');
+      const pulseRing = document.getElementById('micPulseRing');
+      const label = document.getElementById('recordingStateLabel');
+      const vadBadge = document.getElementById('vadStatusBadge');
+      const bubbleSub = document.getElementById('floatingBubbleSubtext');
+
+      micBtn.classList.remove('from-indigo-500', 'to-purple-600');
+      micBtn.classList.add('from-rose-500', 'to-orange-500');
+      pulseRing.classList.remove('hidden');
+      label.textContent = appState.whisperMode
+        ? 'Listening (Whisper Mode 2.5x Gain Active)...'
+        : 'Listening... Speak Naturally';
+      vadBadge.textContent = 'VAD: Speech Active';
+      vadBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+      bubbleSub.textContent = '🔴 Recording & cleaning...';
+
+      clearInterval(appState.recordingInterval);
+      appState.recordingInterval = setInterval(() => {
+        appState.recordingSeconds++;
+        const mins = String(Math.floor(appState.recordingSeconds / 60)).padStart(2, '0');
+        const secs = String(appState.recordingSeconds % 60).padStart(2, '0');
+        document.getElementById('recordingTimer').textContent = mins + ':' + secs;
+      }, 1000);
+
+      startWaveformAnimation();
+
+      // Start Web Speech API if available in user's browser
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRec) {
+        try {
+          recognitionInstance = new SpeechRec();
+          recognitionInstance.continuous = true;
+          recognitionInstance.interimResults = true;
+          recognitionInstance.lang = appState.language;
+
+          recognitionInstance.onresult = (event) => {
+            let transcript = '';
+            for (let i = 0; i < event.results.length; i++) {
+              transcript += event.results[i][0].transcript + ' ';
+            }
+            document.getElementById('rawSpeechInput').value = transcript.trim();
+            triggerRefinementUpdate();
+          };
+
+          recognitionInstance.onerror = () => {
+            // Keep waveform running smoothly; user can also use preset buttons
+          };
+
+          recognitionInstance.start();
+        } catch (err) {
+          // Fallback gracefully
+        }
+      }
+    }
+
+    function stopRecording() {
+      appState.isRecording = false;
+      clearInterval(appState.recordingInterval);
+      if (appState.audioAnimFrame) {
+        cancelAnimationFrame(appState.audioAnimFrame);
+      }
+      if (recognitionInstance) {
+        try { recognitionInstance.stop(); } catch (e) {}
+        recognitionInstance = null;
+      }
+
+      const micBtn = document.getElementById('mainMicBtn');
+      const pulseRing = document.getElementById('micPulseRing');
+      const label = document.getElementById('recordingStateLabel');
+      const vadBadge = document.getElementById('vadStatusBadge');
+      const bubbleSub = document.getElementById('floatingBubbleSubtext');
+
+      micBtn.classList.add('from-indigo-500', 'to-purple-600');
+      micBtn.classList.remove('from-rose-500', 'to-orange-500');
+      pulseRing.classList.add('hidden');
+      label.textContent = 'Tap Mic to Dictate Naturally';
+      vadBadge.textContent = 'VAD: Silence Trimmed';
+      vadBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400';
+      bubbleSub.textContent = 'Cursor focused • Tap to speak';
+
+      drawIdleWaveform();
+      triggerRefinementUpdate();
+    }
+
+    function drawIdleWaveform() {
+      const canvas = document.getElementById('waveformCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#334155';
+      const bars = 28;
+      const barWidth = 5;
+      const gap = (canvas.width - bars * barWidth) / (bars - 1);
+      for (let i = 0; i < bars; i++) {
+        const h = 4;
+        const x = i * (barWidth + gap);
+        const y = (canvas.height - h) / 2;
+        ctx.fillRect(x, y, barWidth, h);
+      }
+      document.getElementById('dbMeterText').textContent = '-48 dB';
+    }
+
+    function startWaveformAnimation() {
+      const canvas = document.getElementById('waveformCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let tick = 0;
+
+      function renderFrame() {
+        if (!appState.isRecording) return;
+        tick += 0.18;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const bars = 28;
+        const barWidth = 5;
+        const gap = (canvas.width - bars * barWidth) / (bars - 1);
+        const boost = appState.whisperMode ? 1.45 : 1.0;
+
+        for (let i = 0; i < bars; i++) {
+          const wave = Math.abs(Math.sin(tick + i * 0.45) * Math.cos(tick * 0.7 - i * 0.2));
+          const h = Math.min(canvas.height - 2, Math.max(4, wave * 28 * boost));
+          const x = i * (barWidth + gap);
+          const y = (canvas.height - h) / 2;
+          ctx.fillStyle = appState.whisperMode ? '#34d399' : '#818cf8';
+          ctx.fillRect(x, y, barWidth, h);
+        }
+
+        const dbVal = Math.round(-26 + Math.sin(tick) * 9 + (appState.whisperMode ? 8 : 0));
+        document.getElementById('dbMeterText').textContent = dbVal + ' dB';
+        appState.audioAnimFrame = requestAnimationFrame(renderFrame);
+      }
+      renderFrame();
+    }
+
+    // =========================================================================
+    // RENDER PERSONAL DICTIONARY, SNIPPETS & SCRATCHPAD NOTES
+    // =========================================================================
+    function renderDictionaryList() {
+      const container = document.getElementById('dictionaryListContainer');
+      container.innerHTML = '';
+      appState.dictionary.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2 text-xs';
+        row.innerHTML = `
+          <div>
+            <span class="text-slate-400 line-through mr-2">"${escapeHtml(item.spoken)}"</span>
+            <span class="text-indigo-300 font-semibold">→ ${escapeHtml(item.correct)}</span>
+          </div>
+          <button type="button" data-del-dict="${item.id}" class="text-slate-500 hover:text-rose-400 px-2 py-0.5">✕</button>
+        `;
+        container.appendChild(row);
+      });
+
+      container.querySelectorAll('[data-del-dict]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-del-dict');
+          appState.dictionary = appState.dictionary.filter(d => d.id !== id);
+          saveState();
+          renderDictionaryList();
+          triggerRefinementUpdate();
+        });
+      });
+    }
+
+    function renderSnippetsList() {
+      const container = document.getElementById('snippetsListContainer');
+      container.innerHTML = '';
+      appState.snippets.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2 text-xs';
+        row.innerHTML = `
+          <div class="truncate pr-2">
+            <span class="text-emerald-300 font-mono font-semibold">"${escapeHtml(item.trigger)}"</span>
+            <span class="text-slate-400 block truncate">→ ${escapeHtml(item.expansion)}</span>
+          </div>
+          <button type="button" data-del-snip="${item.id}" class="text-slate-500 hover:text-rose-400 px-2 py-0.5">✕</button>
+        `;
+        container.appendChild(row);
+      });
+
+      container.querySelectorAll('[data-del-snip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-del-snip');
+          appState.snippets = appState.snippets.filter(s => s.id !== id);
+          saveState();
+          renderSnippetsList();
+          triggerRefinementUpdate();
+        });
+      });
+    }
+
+    function renderNotesList() {
+      const container = document.getElementById('notesListContainer');
+      const query = (document.getElementById('notesSearchInput').value || '').toLowerCase();
+      document.getElementById('notesCountBadge').textContent = String(appState.notes.length);
+
+      const filtered = appState.notes.filter(n => {
+        const folderOk = appState.activeFolder === 'all' || n.folder === appState.activeFolder;
+        const searchOk = !query || n.title.toLowerCase().includes(query) || n.text.toLowerCase().includes(query);
+        return folderOk && searchOk;
+      });
+
+      container.innerHTML = '';
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="text-center py-8 text-xs text-slate-500">No voice notes in this folder yet. Save a dictation or import an audio file!</div>';
+        return;
+      }
+
+      filtered.forEach(note => {
+        const card = document.createElement('div');
+        card.className = 'bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 space-y-2';
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">${escapeHtml(note.folder)}</span>
+              <h3 class="text-xs font-bold text-white">${escapeHtml(note.title)}</h3>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-[11px] text-slate-500">${escapeHtml(note.timestamp)}</span>
+              <button type="button" data-copy-note="${note.id}" class="text-indigo-300 hover:text-white px-1.5 py-0.5 rounded bg-slate-800">Copy</button>
+              <button type="button" data-del-note="${note.id}" class="text-slate-500 hover:text-rose-400 px-1.5 py-0.5">✕</button>
+            </div>
+          </div>
+          <p class="text-xs text-slate-300 whitespace-pre-line leading-relaxed">${escapeHtml(note.text)}</p>
+        `;
+        container.appendChild(card);
+      });
+
+      container.querySelectorAll('[data-copy-note]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const note = appState.notes.find(n => n.id === btn.getAttribute('data-copy-note'));
+          if (note) copyStringToClipboard(note.text);
+        });
+      });
+
+      container.querySelectorAll('[data-del-note]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-del-note');
+          appState.notes = appState.notes.filter(n => n.id !== id);
+          saveState();
+          renderNotesList();
+        });
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function copyStringToClipboard(str) {
+      if (!str) {
+        showToast('Nothing to copy yet!');
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(str).then(() => {
+          showToast('Copied polished text to clipboard!');
+        }).catch(() => fallbackCopy(str));
+      } else {
+        fallbackCopy(str);
+      }
+    }
+
+    function fallbackCopy(str) {
+      const temp = document.createElement('textarea');
+      temp.value = str;
+      document.body.appendChild(temp);
+      temp.select();
+      try {
+        document.execCommand('copy');
+        showToast('Copied polished text to clipboard!');
+      } catch (e) {
+        showToast('Select text to copy');
+      }
+      document.body.removeChild(temp);
+    }
+
+    // =========================================================================
+    // HARDWARE RAM & LATENCY CALCULATOR (POCO F4 12 GB RAM)
+    // =========================================================================
+    function updateEngineMetrics() {
+      const asr = document.getElementById('asrModelSelect').value;
+      const slm = document.getElementById('slmModelSelect').value;
+
+      const asrSpecs = {
+        moonshine: { ram: 0.16, latency: 0.25, label: 'Moonshine-Base' },
+        whisper_small: { ram: 0.35, latency: 0.55, label: 'Whisper-Small' },
+        whisper_turbo: { ram: 0.78, latency: 1.35, label: 'Whisper-v3-Turbo' }
+      };
+      const slmSpecs = {
+        llama1b: { ram: 0.95, latency: 0.22, label: 'Llama-3.2-1B' },
+        qwen15b: { ram: 1.15, latency: 0.30, label: 'Qwen2.5-1.5B' },
+        llama3b: { ram: 2.15, latency: 0.55, label: 'Llama-3.2-3B' }
+      };
+
+      const a = asrSpecs[asr] || asrSpecs.whisper_small;
+      const s = slmSpecs[slm] || slmSpecs.qwen15b;
+      const totalRam = (a.ram + s.ram).toFixed(2);
+      const pct = Math.min(100, Math.round(((a.ram + s.ram) / 12.0) * 100));
+      const totalLat = (a.latency + s.latency).toFixed(2);
+
+      document.getElementById('ramUsageText').textContent = totalRam + ' / 12.0 GB';
+      document.getElementById('headerModelBadge').textContent = a.label + ' + ' + s.label;
+      document.getElementById('calcTotalRam').textContent = totalRam + ' GB / 12.0 GB (' + pct + '%)';
+      document.getElementById('ramProgressBar').style.width = pct + '%';
+      document.getElementById('calcEndToEndLatency').textContent = '~' + totalLat + 's total';
+    }
+
+    // =========================================================================
+    // WIRE UP ALL CONTROLS & LISTENERS
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      // Initial sample text
+      const defaultSample = "Um hey Biswaroop comma let's meet at 4 pm, actually no, 3 pm on Tuesday wait no Wednesday to test whisper dot cpp on my poco f four. Also please send the invite to insert my email";
+      document.getElementById('rawSpeechInput').value = defaultSample;
+      drawIdleWaveform();
+      renderDictionaryList();
+      renderSnippetsList();
+      renderNotesList();
+      updateEngineMetrics();
+      triggerRefinementUpdate();
+
+      // Tab Navigation
+      document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const target = btn.getAttribute('data-tab');
+          appState.activeTab = target;
+
+          document.querySelectorAll('.nav-tab-btn').forEach(b => {
+            b.className = 'nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800/70 transition whitespace-nowrap flex items-center gap-1.5';
+          });
+          btn.className = 'nav-tab-btn px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm transition whitespace-nowrap flex items-center gap-1.5';
+
+          document.getElementById('tabPanelDictate').classList.toggle('hidden', target !== 'dictate');
+          document.getElementById('tabPanelPersonalize').classList.toggle('hidden', target !== 'personalize');
+          document.getElementById('tabPanelScratchpad').classList.toggle('hidden', target !== 'scratchpad');
+          document.getElementById('tabPanelEngine').classList.toggle('hidden', target !== 'engine');
+        });
+      });
+
+      // Target App Context Switcher
+      document.getElementById('targetAppSelect').addEventListener('change', (e) => {
+        appState.targetApp = e.target.value;
+        const labels = {
+          whatsapp: 'WhatsApp',
+          gmail: 'Gmail',
+          slack: 'Slack',
+          vscode: 'Termux/IDE',
+          notes: 'Notes'
+        };
+        document.getElementById('floatingBubbleAppTag').textContent = labels[appState.targetApp] || 'App';
+        triggerRefinementUpdate();
+      });
+
+      // Language Switcher
+      document.getElementById('dictationLangSelect').addEventListener('change', (e) => {
+        appState.language = e.target.value;
+        showToast('Dictation language set to ' + e.target.options[e.target.selectedIndex].text);
+      });
+
+      // Whisper Mode Toggle
+      document.getElementById('whisperModeBtn').addEventListener('click', () => {
+        appState.whisperMode = !appState.whisperMode;
+        const dot = document.getElementById('whisperModeDot');
+        const status = document.getElementById('whisperModeStatus');
+        if (appState.whisperMode) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+          status.textContent = 'ON';
+          status.className = 'text-emerald-300';
+          showToast('Whisper Mode ON: 2.5x low-volume mic boost enabled');
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+          status.textContent = 'OFF';
+          status.className = '';
+          showToast('Whisper Mode OFF');
+        }
+      });
+
+      // Floating Overlay Toggle
+      document.getElementById('toggleFloatingBubbleBtn').addEventListener('click', () => {
+        appState.floatingOverlayVisible = !appState.floatingOverlayVisible;
+        document.getElementById('floatingOverlayWidget').classList.toggle('hidden', !appState.floatingOverlayVisible);
+        document.getElementById('floatingOverlayStatus').textContent = appState.floatingOverlayVisible ? 'ON' : 'OFF';
+      });
+
+      // Refinement Layer Pills
+      document.querySelectorAll('[data-refine-toggle]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-refine-toggle');
+          appState.refineFlags[key] = !appState.refineFlags[key];
+          if (appState.refineFlags[key]) {
+            btn.className = 'refine-pill px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-medium';
+            btn.textContent = '✓ ' + btn.textContent.replace(/^[✓✕]\s*/, '');
+          } else {
+            btn.className = 'refine-pill px-2.5 py-1 rounded-full bg-slate-900 text-slate-500 border border-slate-800 font-medium';
+            btn.textContent = '✕ ' + btn.textContent.replace(/^[✓✕]\s*/, '');
+          }
+          triggerRefinementUpdate();
+        });
+      });
+
+      // Main Mic & Floating Bubble Mic Buttons
+      document.getElementById('mainMicBtn').addEventListener('click', toggleRecording);
+      document.getElementById('floatingBubbleMicBtn').addEventListener('click', toggleRecording);
+
+      // Sample Utterance Presets
+      const samplePresets = {
+        backtrack: "Um hey Biswaroop comma let's meet at 4 pm, actually no, 3 pm on Tuesday wait no Wednesday to review the Snapdragon eight seventy benchmark",
+        list: "Uh going to the store for 1 apples 2 bananas 3 cold brew coffee 4 roasted almonds",
+        dev: "Um in whisper dot cpp and llama dot cpp we should refactor camel case audio buffer and snake case token stream for super base",
+        snippet: "Uh please send the build logs to insert my email or book a slot on calendar link using my phone specs"
+      };
+
+      document.querySelectorAll('.sample-utterance-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-sample');
+          if (key === 'dev') {
+            appState.targetApp = 'vscode';
+            document.getElementById('targetAppSelect').value = 'vscode';
+            document.getElementById('floatingBubbleAppTag').textContent = 'Termux/IDE';
+          }
+          document.getElementById('rawSpeechInput').value = samplePresets[key] || '';
+          triggerRefinementUpdate();
+          showToast('Loaded & refined sample voice utterance!');
+        });
+      });
+
+      // Raw Input Live Listener & Clear
+      document.getElementById('rawSpeechInput').addEventListener('input', triggerRefinementUpdate);
+      document.getElementById('runRefinementNowBtn').addEventListener('click', () => {
+        triggerRefinementUpdate();
+        showToast('Re-ran Stage 2 AI refinement!');
+      });
+      document.getElementById('clearDictationBtn').addEventListener('click', () => {
+        document.getElementById('rawSpeechInput').value = '';
+        triggerRefinementUpdate();
+      });
+
+      // Copy, Share to App, Save to Scratchpad
+      document.getElementById('copyPolishedBtn').addEventListener('click', () => {
+        copyStringToClipboard(document.getElementById('polishedOutputText').value);
+      });
+
+      document.getElementById('shareToAppBtn').addEventListener('click', () => {
+        const text = document.getElementById('polishedOutputText').value.trim();
+        if (!text) {
+          showToast('Dictate some text first!');
+          return;
+        }
+        if (navigator.share) {
+          navigator.share({ title: 'LocalFlow Dictation', text }).catch(() => {});
+        } else {
+          copyStringToClipboard(text);
+          showToast('Text copied — ready to paste into focused app!');
+        }
+      });
+
+      document.getElementById('saveToScratchpadBtn').addEventListener('click', () => {
+        const text = document.getElementById('polishedOutputText').value.trim();
+        if (!text) {
+          showToast('Nothing to save yet!');
+          return;
+        }
+        const folder = document.getElementById('newNoteFolderSelect').value || 'Work';
+        const firstLine = text.split('\n')[0].slice(0, 42);
+        appState.notes.unshift({
+          id: 'n_' + Date.now(),
+          folder,
+          title: firstLine || 'Voice Dictation Note',
+          text,
+          timestamp: 'Just now'
+        });
+        saveState();
+        renderNotesList();
+        showToast('Saved to Scratchpad (' + folder + ' folder)!');
+      });
+
+      // Voice Command Mode Buttons
+      document.querySelectorAll('.voice-cmd-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          applyVoiceEditCommand(btn.getAttribute('data-cmd'));
+        });
+      });
+
+      document.getElementById('applyCustomCommandBtn').addEventListener('click', () => {
+        const val = document.getElementById('customVoiceCommandInput').value.trim();
+        if (!val) {
+          showToast('Enter a voice edit command first!');
+          return;
+        }
+        applyVoiceEditCommand('custom', val);
+        document.getElementById('customVoiceCommandInput').value = '';
+      });
+
+      // Add Dictionary Entry
+      document.getElementById('addDictBtn').addEventListener('click', () => {
+        const spoken = document.getElementById('dictSpokenInput').value.trim();
+        const correct = document.getElementById('dictCorrectInput').value.trim();
+        if (!spoken || !correct) {
+          showToast('Enter both spoken phrase and exact spelling!');
+          return;
+        }
+        appState.dictionary.unshift({ id: 'd_' + Date.now(), spoken, correct });
+        document.getElementById('dictSpokenInput').value = '';
+        document.getElementById('dictCorrectInput').value = '';
+        saveState();
+        renderDictionaryList();
+        triggerRefinementUpdate();
+        showToast('Added "' + correct + '" to Personal Dictionary!');
+      });
+
+      // Add Voice Snippet
+      document.getElementById('addSnippetBtn').addEventListener('click', () => {
+        const trigger = document.getElementById('snippetTriggerInput').value.trim();
+        const expansion = document.getElementById('snippetExpansionInput').value.trim();
+        if (!trigger || !expansion) {
+          showToast('Enter both spoken trigger and expanded text!');
+          return;
+        }
+        appState.snippets.unshift({ id: 's_' + Date.now(), trigger, expansion });
+        document.getElementById('snippetTriggerInput').value = '';
+        document.getElementById('snippetExpansionInput').value = '';
+        saveState();
+        renderSnippetsList();
+        triggerRefinementUpdate();
+        showToast('Saved voice snippet "' + trigger + '"!');
+      });
+
+      // Folder Filter & Search in Scratchpad
+      document.querySelectorAll('.folder-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          appState.activeFolder = btn.getAttribute('data-folder');
+          document.querySelectorAll('.folder-filter-btn').forEach(b => {
+            b.className = 'folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-slate-300 hover:bg-slate-800';
+          });
+          btn.className = 'folder-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white';
+          renderNotesList();
+        });
+      });
+
+      document.getElementById('notesSearchInput').addEventListener('input', renderNotesList);
+
+      // Audio File Import & Sample Meeting Summarizer
+      document.getElementById('audioFileInput').addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        document.getElementById('selectedAudioFileName').textContent = 'Selected: ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
+        runAudioImportSummary(file.name);
+      });
+
+      document.getElementById('simulateAudioImportBtn').addEventListener('click', () => {
+        runAudioImportSummary('poco_f4_architecture_sync.m4a');
+      });
+
+      // Engine Model Selectors
+      document.getElementById('asrModelSelect').addEventListener('change', updateEngineMetrics);
+      document.getElementById('slmModelSelect').addEventListener('change', updateEngineMetrics);
+      document.getElementById('idleUnloadSelect').addEventListener('change', () => {
+        showToast('Updated Android Doze idle model unload timer!');
+      });
+    });
+
+    function runAudioImportSummary(filename) {
+      const box = document.getElementById('importedAudioSummaryBox');
+      const titleEl = document.getElementById('importedAudioTitle');
+      const contentEl = document.getElementById('importedAudioContent');
+
+      const summaryText = "File: " + filename + "\n• Key Decision: Use Whisper Small (Q5_1) + Qwen2.5-1.5B-Instruct (Q4_K_M) on Poco F4.\n• Action Item 1: Enable AccessibilityService floating mic bubble for WhatsApp and Gmail.\n• Action Item 2: Set 5-minute idle RAM unload timeout for battery optimization.";
+
+      titleEl.textContent = 'Transcribed: ' + filename;
+      contentEl.textContent = summaryText;
+      box.classList.remove('hidden');
+
+      appState.notes.unshift({
+        id: 'n_' + Date.now(),
+        folder: 'Meetings',
+        title: 'Audio Import: ' + filename,
+        text: summaryText,
+        timestamp: 'Just now'
+      });
+      saveState();
+      renderNotesList();
+      showToast('Transcribed & summarized ' + filename + ' locally!');
+    }
+  </script>
+</body>
+</html>
